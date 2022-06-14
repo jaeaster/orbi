@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-teloxide = { version = "0.9", features = ["macros", "auto-send"] }
+teloxide = { version = "0.9", features = ["full", "macros", "auto-send"] }
 log = "0.4"
 pretty_env_logger = "0.4"
 tokio = { version =  "1.8", features = ["rt-multi-thread", "macros"] }
@@ -15,3 +15,6 @@ eyre = "0.6.8"
 color-eyre = "0.6.1"
 nftgen = { git = "https://github.com/jaeaster/nftgen.git" }
 image = "0.24.2"
+warp = "0.3.2"
+reqwest = "0.11.11"
+tokio-stream = "0.1.9"

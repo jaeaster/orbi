@@ -4,11 +4,14 @@ use chrono::{DateTime, Utc};
 use dotenv::dotenv;
 use eyre::Result;
 
-use image::{DynamicImage, ImageFormat};
+use image::ImageFormat;
 use teloxide::{
     prelude::*,
     types::{InputFile, MediaKind, MediaText, MessageKind},
 };
+
+mod webhook;
+use crate::webhook::webhook;
 
 static LAYERS_DIR: &str = "orbitalz-layers";
 static LAYERS_ORDER: [&str; 6] = ["Background", "Orbital", "Eyes", "Nose", "Mouth", "Hat"];
@@ -35,44 +38,48 @@ async fn run() -> Result<()> {
     let bot = Bot::from_env().auto_send();
 
     let layer_groups = Arc::new(layer_groups);
-    teloxide::repl(bot, move |message: Message, bot: AutoSend<Bot>| {
-        let layer_groups = layer_groups.clone();
-        async move {
+    teloxide::repl_with_listener(
+        bot.clone(),
+        move |message: Message, bot: AutoSend<Bot>| {
             let layer_groups = layer_groups.clone();
-            let timestamp_result: Result<DateTime<Utc>, chrono::ParseError> =
-                DateTime::from_str("2022-06-13T16:56:51Z");
+            async move {
+                let layer_groups = layer_groups.clone();
+                let timestamp_result: Result<DateTime<Utc>, chrono::ParseError> =
+                    DateTime::from_str("2022-06-13T16:56:51Z");
 
-            if let Ok(last_message_timestamp) = timestamp_result {
-                if message.date < last_message_timestamp {
-                    return Ok(());
-                }
-            }
-
-            log::debug!("{:#?}", message);
-            match message.kind {
-                MessageKind::Common(msg) => {
-                    if let Some(from) = msg.from {
-                        log::info!("Received message from: {:#?}", from.first_name);
-                    } else {
-                        log::info!("Received message from anon");
+                if let Ok(last_message_timestamp) = timestamp_result {
+                    if message.date < last_message_timestamp {
+                        return Ok(());
                     }
-                    match msg.media_kind {
-                        MediaKind::Text(media_text) => {
-                            log::info!("{}", media_text.text);
-                            if bot_mentioned(&media_text) {
-                                let orbital_image = gen_orbital(&layer_groups);
-                                log::info!("Sending orbitalz");
-                                bot.send_photo(message.chat.id, orbital_image).await?;
-                            }
+                }
+
+                log::debug!("{:#?}", message);
+                match message.kind {
+                    MessageKind::Common(msg) => {
+                        if let Some(from) = msg.from {
+                            log::info!("Received message from: {:#?}", from.first_name);
+                        } else {
+                            log::info!("Received message from anon");
                         }
-                        _ => (),
+                        match msg.media_kind {
+                            MediaKind::Text(media_text) => {
+                                log::info!("{}", media_text.text);
+                                if bot_mentioned(&media_text) {
+                                    let orbital_image = gen_orbital(&layer_groups);
+                                    log::info!("Sending orbitalz");
+                                    bot.send_photo(message.chat.id, orbital_image).await?;
+                                }
+                            }
+                            _ => (),
+                        }
                     }
+                    _ => (),
                 }
-                _ => (),
+                respond(())
             }
-            respond(())
-        }
-    })
+        },
+        webhook(bot).await,
+    )
     .await;
 
     Ok(())
