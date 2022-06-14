@@ -69,7 +69,10 @@ async fn run(layer_groups: Vec<LayerGroup>, bot: AutoSend<Bot>) -> Result<()> {
             let layer_groups = layer_groups.clone();
             log_message(&message);
             match command {
-                Command::Help => (),
+                Command::Help => {
+                    bot.send_message(message.chat.id, Command::descriptions().to_string())
+                        .await?;
+                }
                 Command::Create => {
                     let orbital_image = gen_orbital(&layer_groups);
                     log::info!("Sending orbitalz");
