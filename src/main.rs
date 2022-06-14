@@ -5,12 +5,15 @@ use dotenv::dotenv;
 use eyre::Result;
 
 use image::ImageFormat;
+use nftgen::layer::LayerGroup;
 use teloxide::{
     prelude::*,
     types::{InputFile, MediaKind, MediaText, MessageKind},
 };
 
+mod s3;
 mod webhook;
+use crate::s3::download_layers_s3;
 use crate::webhook::webhook;
 
 static LAYERS_DIR: &str = "orbitalz-layers";
@@ -18,13 +21,19 @@ static LAYERS_ORDER: [&str; 6] = ["Background", "Orbital", "Eyes", "Nose", "Mout
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    run().await?;
+    let (layer_groups, bot) = init().await?;
+    run(layer_groups, bot).await?;
     Ok(())
 }
 
-async fn run() -> Result<()> {
+async fn init() -> Result<(Vec<LayerGroup>, AutoSend<Bot>)> {
     dotenv().ok();
     pretty_env_logger::init();
+
+    if !std::path::Path::new(&LAYERS_DIR).exists() {
+        log::info!("Downloading layers from S3");
+        download_layers_s3().await?;
+    }
 
     log::debug!("Parsing layer groups");
     let mut layer_groups = nftgen::layer::get_layer_groups(LAYERS_DIR, &LAYERS_ORDER)?;
@@ -37,51 +46,56 @@ async fn run() -> Result<()> {
     log::info!("Starting Orbi...");
     let bot = Bot::from_env().auto_send();
 
+    Ok((layer_groups, bot))
+}
+
+async fn run(layer_groups: Vec<LayerGroup>, bot: AutoSend<Bot>) -> Result<()> {
     let layer_groups = Arc::new(layer_groups);
-    teloxide::repl_with_listener(
-        bot.clone(),
-        move |message: Message, bot: AutoSend<Bot>| {
+    let closure = move |message: Message, bot: AutoSend<Bot>| {
+        let layer_groups = layer_groups.clone();
+        async move {
             let layer_groups = layer_groups.clone();
-            async move {
-                let layer_groups = layer_groups.clone();
-                let timestamp_result: Result<DateTime<Utc>, chrono::ParseError> =
-                    DateTime::from_str("2022-06-13T16:56:51Z");
+            // let timestamp_result: Result<DateTime<Utc>, chrono::ParseError> =
+            //     DateTime::from_str("2022-06-13T16:56:51Z");
 
-                if let Ok(last_message_timestamp) = timestamp_result {
-                    if message.date < last_message_timestamp {
-                        return Ok(());
+            // if let Ok(last_message_timestamp) = timestamp_result {
+            //     if message.date < last_message_timestamp {
+            //         return Ok(());
+            //     }
+            // }
+
+            log::debug!("{:#?}", message);
+            match message.kind {
+                MessageKind::Common(msg) => {
+                    if let Some(from) = msg.from {
+                        log::info!("Received message from: {:#?}", from.first_name);
+                    } else {
+                        log::info!("Received message from anon");
                     }
-                }
-
-                log::debug!("{:#?}", message);
-                match message.kind {
-                    MessageKind::Common(msg) => {
-                        if let Some(from) = msg.from {
-                            log::info!("Received message from: {:#?}", from.first_name);
-                        } else {
-                            log::info!("Received message from anon");
-                        }
-                        match msg.media_kind {
-                            MediaKind::Text(media_text) => {
-                                log::info!("{}", media_text.text);
-                                if bot_mentioned(&media_text) {
-                                    let orbital_image = gen_orbital(&layer_groups);
-                                    log::info!("Sending orbitalz");
-                                    bot.send_photo(message.chat.id, orbital_image).await?;
-                                }
+                    match msg.media_kind {
+                        MediaKind::Text(media_text) => {
+                            log::info!("{}", media_text.text);
+                            if bot_mentioned(&media_text) {
+                                let orbital_image = gen_orbital(&layer_groups);
+                                log::info!("Sending orbitalz");
+                                bot.send_photo(message.chat.id, orbital_image).await?;
                             }
-                            _ => (),
                         }
+                        _ => (),
                     }
-                    _ => (),
                 }
-                respond(())
+                _ => (),
             }
-        },
-        webhook(bot).await,
-    )
-    .await;
+            respond(())
+        }
+    };
 
+    if std::env::var("LOCALHOST").is_ok() {
+        log::info!("Running in localhost mode");
+        teloxide::repl(bot.clone(), closure).await;
+    } else {
+        teloxide::repl_with_listener(bot.clone(), closure, webhook(bot).await).await;
+    }
     Ok(())
 }
 
