@@ -1,6 +1,5 @@
-use std::{io::Cursor, str::FromStr, sync::Arc};
+use std::{io::Cursor, sync::Arc};
 
-use chrono::{DateTime, Utc};
 use dotenv::dotenv;
 use eyre::Result;
 
@@ -55,14 +54,6 @@ async fn run(layer_groups: Vec<LayerGroup>, bot: AutoSend<Bot>) -> Result<()> {
         let layer_groups = layer_groups.clone();
         async move {
             let layer_groups = layer_groups.clone();
-            // let timestamp_result: Result<DateTime<Utc>, chrono::ParseError> =
-            //     DateTime::from_str("2022-06-13T16:56:51Z");
-
-            // if let Ok(last_message_timestamp) = timestamp_result {
-            //     if message.date < last_message_timestamp {
-            //         return Ok(());
-            //     }
-            // }
 
             log::debug!("{:#?}", message);
             match message.kind {
